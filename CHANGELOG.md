@@ -62,6 +62,20 @@ Format:
 - Rollback: delete the new files + revert the `.gitignore` line
 - Forward-compatibility: hooks, custom skills, and subagents intentionally deferred — easy to add to `.claude/` later without touching what's there
 
+## [Iter 1] — 2026-05-26 — Hello HTTP server
+
+- Added: `express` dependency, `@types/express` devDep, `dev` script in `package.json`
+- Modified: `src/app.ts` — Express server with `GET /ping` and `POST /invocations` (stub `{result:"hello"}`)
+- Added: `docs/prompts/iter-1.md`
+- Tests:
+  - `npm run build` → clean compile, no errors
+  - `node dist/app.js` → `listening on :8080`
+  - `curl localhost:8080/ping` → `{"status":"ok"}` (200)
+  - `curl -X POST localhost:8080/invocations -d '{"prompt":"x"}'` → `{"result":"hello"}` (200)
+- Prompt log: [docs/prompts/iter-1.md](docs/prompts/iter-1.md)
+- Rollback: delete `src/app.ts`, revert `package.json` to remove Express
+- Forward-compatibility: response shape `{result, sessionId?, usage?}` defined now; port reads from `PORT` env var
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

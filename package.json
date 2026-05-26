@@ -10,9 +10,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
+    "dev": "tsc && node dist/app.js",
     "clean": "rimraf dist"
   },
+  "dependencies": {
+    "express": "^4.19.0"
+  },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^20.14.0",
     "rimraf": "^5.0.10",
     "typescript": "^5.4.0"
