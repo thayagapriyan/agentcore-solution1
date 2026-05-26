@@ -33,3 +33,6 @@ Thumbs.db
 # AWS / secrets
 *.pem
 .aws-sam/
+
+# Claude Code — personal overrides only (shared settings are committed)
+.claude/settings.local.json
