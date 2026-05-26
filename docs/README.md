@@ -32,6 +32,7 @@ Amazon Bedrock **AgentCore** is the AWS-managed runtime for hosting AI agents as
 | 4 | [04-terraform.md](04-terraform.md) | Full IaC reference (ECR, IAM, runtime, gateway) |
 | 5 | [05-deployment.md](05-deployment.md) | Build → push → deploy → invoke |
 | 6 | [06-migration.md](06-migration.md) | Migrating an existing Bedrock Agents project to AgentCore |
+| ★ | [iteration-plan.md](iteration-plan.md) | **Build it step-by-step** — 12 small, additive iterations with Design / Develop / Test / Deploy phases |
 
 ---
 
