@@ -76,6 +76,22 @@ Format:
 - Rollback: delete `src/app.ts`, revert `package.json` to remove Express
 - Forward-compatibility: response shape `{result, sessionId?, usage?}` defined now; port reads from `PORT` env var
 
+## [Iter 2] — 2026-05-31 — Containerize
+
+- Added: `Dockerfile` — multi-stage ARM64 build (`node:20-bookworm-slim`), non-root `agent` user (uid 1001), `/ping` healthcheck. `.dockerignore` already present from earlier.
+- Added: `docs/prompts/iter-2.md`
+- Changed: healthcheck uses a node-based `fetch` probe instead of the `wget` shown in `docs/03-agent-code.md` — the slim base image ships neither `wget` nor `curl`, so `wget` left the container `unhealthy`. Doc flagged for a follow-up fix.
+- Tests:
+  - `docker buildx build --platform linux/arm64 -t agent:local --load .` → build succeeded, 0 vulnerabilities
+  - `docker image inspect agent:local --format '{{.Architecture}}/{{.Os}}'` → `arm64/linux`
+  - `curl localhost:8080/ping` → `{"status":"ok"}` (200)
+  - `curl -X POST localhost:8080/invocations -d '{"prompt":"x"}'` → `{"result":"hello"}` (200)
+  - `docker exec ... whoami` → `agent` (non-root)
+  - healthcheck → `healthy` within ~10s
+- Prompt log: [docs/prompts/iter-2.md](docs/prompts/iter-2.md)
+- Rollback: delete the `Dockerfile` (no AWS resources touched)
+- Forward-compatibility: no region/model/account baked into the image — all config via env vars; `PORT` overridable
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.
