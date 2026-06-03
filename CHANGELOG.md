@@ -92,6 +92,22 @@ Format:
 - Rollback: delete the `Dockerfile` (no AWS resources touched)
 - Forward-compatibility: no region/model/account baked into the image — all config via env vars; `PORT` overridable
 
+## [Iter 3] — 2026-05-31 — ECR + IAM
+
+- Added: `infra/versions.tf` (S3 backend, S3-native lock, AWS provider >= 5.70), `infra/variables.tf`, `infra/ecr.tf` (repo + lifecycle), `infra/iam.tf` (execution role + minimal `ecr_pull`/`logs` policies), `infra/outputs.tf`
+- Added: `docs/prompts/iter-3.md`
+- Deliberately omitted: `runtime.tf`, `gateway.tf` (later iterations)
+- Infra (us-east-1, acct 224193574799): ECR repo `agentcore-solution1`, IAM role `agentcore-solution1-runtime-role`. State in `warewise-tfstate-224193574799` key `agentcore-solution1/terraform.tfstate`.
+- Pushed hello image → `224193574799.dkr.ecr.us-east-1.amazonaws.com/agentcore-solution1:latest` (`linux/arm64`, digest `sha256:f3f9548d…`)
+- Tests:
+  - `terraform init/validate/fmt` → backend OK, valid, clean
+  - `terraform plan` → 5 to add, 0 change, 0 destroy
+  - `terraform apply` → 5 added
+  - `docker push` + `aws ecr describe-images` → image present, tag `latest`, arm64
+- Prompt log: [docs/prompts/iter-3.md](docs/prompts/iter-3.md)
+- Rollback: `terraform destroy` (or `-target=aws_ecr_repository.agent`)
+- Forward-compatibility: IAM role has minimal perms now — Bedrock/Gateway/X-Ray policies get appended in later iterations, never edited in place; all values are variables (no hardcoded account/region in code)
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.
