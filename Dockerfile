@@ -2,7 +2,7 @@
 FROM --platform=linux/arm64 node:20-bookworm-slim AS build
 
 WORKDIR /app
-COPY package*.json tsconfig.json ./
+COPY package*.json tsconfig.json .npmrc ./
 RUN npm ci
 
 COPY src ./src

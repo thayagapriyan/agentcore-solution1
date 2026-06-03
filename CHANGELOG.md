@@ -123,6 +123,23 @@ Format:
 - Rollback: `terraform destroy -target=aws_bedrockagentcore_agent_runtime.agent`
 - Forward-compatibility: env vars minimal (`LOG_LEVEL` only) so iter 5/6 append `MODEL_ID`/`AGENTCORE_GATEWAY_URL` without restructuring; plumbing (ECR→runtime→invoke→response) is proven once here — later iterations change only what's inside `/invocations`
 
+## [Iter 5] — 2026-06-03 — Add Bedrock model call
+
+- Added: `src/agent.ts` (Strands `Agent` + `BedrockModel`, `tools: []`, per-request agent / reused model client); deps `@strands-agents/sdk`, `zod`, `@modelcontextprotocol/sdk`, `@opentelemetry/api`; `.npmrc` (`legacy-peer-deps=true`)
+- Changed: `src/app.ts` — `/invocations` now calls `agent.invoke()` and returns `result.toString()`; parses any-content-type bodies (`express.json({ type: () => true })`); 400-guards missing prompt; echoes `sessionId`. `Dockerfile` — `COPY` includes `.npmrc`. `infra/iam.tf` — appended `bedrock_invoke` policy. `infra/variables.tf` — added `model_id`. `infra/runtime.tf` — appended `MODEL_ID` env + `bedrock_invoke` dependency.
+- Docs fix: corrected `docs/03-agent-code.md` (real package `@strands-agents/sdk`, `agent.invoke`/`result.toString()` API, `.npmrc`, node-fetch healthcheck) and `docs/04-terraform.md` (real resource `aws_bedrockagentcore_agent_runtime` with nested `agent_runtime_artifact`, outputs).
+- Model: default `MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5 is inference-profile-only); overridable via env / `model_id` var.
+- Tests:
+  - `npm run build` → clean compile
+  - Local: `/ping` → 200; `/invocations {"prompt":"what is 2+2?"}` → `"2+2 equals 4."`; `{}` → 400; body without JSON content-type → parsed (the fix)
+  - ARM64 container (`:iter5b`, creds injected) → `/ping` ok, prompt → `"Paris"`
+  - `terraform fmt/validate` clean; `plan` → 1 add, 1 change, 0 destroy
+  - `docker push :iter5b` → digest `sha256:7929ed58…`; `terraform apply` → runtime v3 `READY`
+  - Live `invoke-agent-runtime` → `statusCode 200`, coherent Claude response
+- Prompt log: [docs/prompts/iter-5.md](docs/prompts/iter-5.md)
+- Rollback: `terraform apply -var="image_tag=latest"` (reverts to iter-4 hello image; `latest` left untouched); optionally `terraform destroy -target=aws_iam_role_policy.bedrock_invoke`
+- Forward-compatibility: `MODEL_ID` env-driven (swap models, no code change); `tools: []` explicit for iter 6/7; `bedrock_invoke` is a new policy resource (existing ones untouched); `sessionId` echoed for the session iteration; `latest` tag preserved for image-revert rollback
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

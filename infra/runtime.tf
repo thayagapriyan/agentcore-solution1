@@ -26,14 +26,16 @@ resource "aws_bedrockagentcore_agent_runtime" "agent" {
     server_protocol = "HTTP"
   }
 
-  # Minimal for this iteration. Later iterations APPEND keys (MODEL_ID,
-  # AGENTCORE_GATEWAY_URL) — they don't restructure this block.
+  # Iter 5 appends MODEL_ID. Later iterations append AGENTCORE_GATEWAY_URL etc.
+  # — they add keys, they don't restructure this block.
   environment_variables = {
     LOG_LEVEL = "info"
+    MODEL_ID  = var.model_id
   }
 
   depends_on = [
     aws_iam_role_policy.ecr_pull,
     aws_iam_role_policy.logs,
+    aws_iam_role_policy.bedrock_invoke,
   ]
 }

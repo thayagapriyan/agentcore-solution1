@@ -26,28 +26,40 @@ agentcore-solution1/
 ```json
 {
   "name": "agentcore-solution1",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
-    "dev": "tsx watch src/app.ts"
+    "dev": "tsc && node dist/app.js",
+    "clean": "rimraf dist"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.660.0",
-    "@aws/strands-agents": "^0.4.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "express": "^4.21.0",
-    "zod": "^3.23.0"
+    "@strands-agents/sdk": "^1.4.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opentelemetry/api": "^1.9.1",
+    "express": "^4.19.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
+    "@types/express": "^4.17.21",
     "@types/node": "^20.14.0",
-    "tsx": "^4.19.0",
+    "rimraf": "^5.0.10",
     "typescript": "^5.4.0"
   }
 }
 ```
+
+> The published Strands TypeScript SDK is **`@strands-agents/sdk`** (not
+> `@aws/strands-agents`). `zod`, `@modelcontextprotocol/sdk`, and
+> `@opentelemetry/api` are **required** (non-optional) peer dependencies of the
+> SDK — the package barrel imports them at runtime, so they must be installed
+> directly. `@aws-sdk/client-bedrock-runtime` ships transitively with the SDK.
+>
+> The SDK also declares `express@^5.1.0` and `@a2a-js/sdk` as *optional* peers.
+> They trip npm's strict peer resolver against our Express 4 pin, so add an
+> `.npmrc` with `legacy-peer-deps=true` (committed, and `COPY`'d into the Docker
+> build so the in-container `npm ci` resolves identically).
 
 ---
 
@@ -100,86 +112,101 @@ export interface InvocationResponse {
 
 ## `src/agent.ts` — Strands agent factory
 
+As shipped in iter 5 — model only, no tools yet. The `Agent` is created **per
+invocation** (it carries conversation history and an invocation lock, so a
+shared instance would bleed state across requests); the `BedrockModel` client is
+reused.
+
 ```typescript
-import { Agent, BedrockModel, McpClient } from "@aws/strands-agents";
+import { Agent, BedrockModel } from "@strands-agents/sdk";
 
-const SYSTEM_PROMPT = `You are an AI assistant deployed on Amazon Bedrock AgentCore.
-Use your tools to answer questions accurately. If a tool returns no data, say so —
-do not invent values. Always cite the tool you used in your answer.`;
+const SYSTEM_PROMPT = "You are a helpful assistant.";
 
-export async function createAgent(): Promise<Agent> {
-  const model = new BedrockModel({
-    modelId: process.env.MODEL_ID ?? "anthropic.claude-3-5-sonnet-20241022-v2:0",
+// Claude Haiku 4.5 is inference-profile-only on Bedrock (no on-demand
+// throughput), so the default is the global cross-region profile, not the bare
+// model id. Override per environment with MODEL_ID.
+const DEFAULT_MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0";
+
+let model: BedrockModel | null = null;
+
+function getModel(): BedrockModel {
+  return (model ??= new BedrockModel({
+    modelId: process.env.MODEL_ID ?? DEFAULT_MODEL_ID,
     region: process.env.AWS_REGION ?? "us-east-1",
     temperature: 0.2,
-  });
+  }));
+}
 
-  // Tools come from AgentCore Gateway (managed MCP endpoint).
-  // Gateway URL + auth are injected by the runtime via env vars.
-  const gatewayUrl = process.env.AGENTCORE_GATEWAY_URL;
-  const tools = gatewayUrl
-    ? await McpClient.connect({ url: gatewayUrl, transport: "streamable-http" })
-    : [];
-
+export function createAgent(): Agent {
   return new Agent({
-    model,
-    tools,
+    model: getModel(),
+    tools: [],
     systemPrompt: SYSTEM_PROMPT,
+    printer: false,
   });
 }
 ```
+
+> **Iter 6+ (Gateway tools):** the `tools` array also accepts `McpClient`
+> instances, so a Gateway connection is added by constructing an `McpClient`
+> (from `@strands-agents/sdk`) against `process.env.AGENTCORE_GATEWAY_URL` and
+> passing it in `tools`. The exact wiring is validated and documented in the
+> Gateway iteration — not shown here to avoid presenting unverified API shape.
 
 ---
 
 ## `src/app.ts` — HTTP entrypoint (AgentCore contract)
 
 ```typescript
-import express, { Request, Response } from "express";
-import { createAgent } from "./agent.js";
-import { InvocationRequest, type InvocationResponse } from "./types.js";
+import express from "express";
 import { randomUUID } from "node:crypto";
+import { createAgent } from "./agent.js";
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+const port = parseInt(process.env.PORT ?? "8080", 10);
 
-// Lazy-init: build agent once, reuse across invocations on the warm container
-let agentPromise: ReturnType<typeof createAgent> | null = null;
-const getAgent = () => (agentPromise ??= createAgent());
+// AgentCore forwards the invocation payload without a reliable Content-Type
+// header, so parse every request body as JSON rather than gating on the type.
+// (The default express.json() only parses application/json — under AgentCore it
+// left req.body empty and every invoke returned 400.)
+app.use(express.json({ type: () => true }));
 
 // Required by AgentCore — health check
 app.get("/ping", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+  res.json({ status: "ok" });
 });
 
 // Required by AgentCore — invocation entrypoint
-app.post("/invocations", async (req: Request, res: Response) => {
-  const parsed = InvocationRequest.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.format() });
+app.post("/invocations", async (req, res) => {
+  const prompt = req.body?.prompt;
+  if (typeof prompt !== "string" || prompt.trim() === "") {
+    res.status(400).json({ error: "prompt is required" });
+    return;
   }
-  const { prompt, sessionId = randomUUID() } = parsed.data;
+  const sessionId =
+    typeof req.body?.sessionId === "string" ? req.body.sessionId : randomUUID();
 
   try {
-    const agent = await getAgent();
-    const result = await agent.run(prompt, { sessionId });
-
-    const response: InvocationResponse = {
-      result: result.text,
-      sessionId,
-      usage: result.usage,
-    };
-    res.status(200).json(response);
+    const agent = createAgent();
+    const result = await agent.invoke(prompt);
+    res.json({ result: result.toString(), sessionId });
   } catch (err) {
     console.error("invocation failed", err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-const port = Number(process.env.PORT ?? 8080);
-app.listen(port, "0.0.0.0", () => {
-  console.log(`agent listening on :${port}`);
+app.listen(port, () => {
+  console.log(`listening on :${port}`);
 });
 ```
+
+> `agent.invoke(prompt)` returns an `AgentResult`; `result.toString()` extracts
+> the text. The response shape stays `{ result, sessionId }` (the `usage` field
+> defined in iter 1 is wired up in a later observability iteration). `sessionId`
+> is echoed now so the session iteration can attach state without changing
+> callers. The `types.ts` zod schema above is an optional reference — the
+> shipped handler inlines minimal validation to keep the dependency surface small.
 
 ---
 
@@ -190,7 +217,7 @@ app.listen(port, "0.0.0.0", () => {
 FROM --platform=linux/arm64 node:20-bookworm-slim AS build
 
 WORKDIR /app
-COPY package*.json tsconfig.json ./
+COPY package*.json tsconfig.json .npmrc ./
 RUN npm ci
 
 COPY src ./src
@@ -212,8 +239,9 @@ RUN useradd --create-home --uid 1001 agent
 USER agent
 
 EXPOSE 8080
+# node:20-bookworm-slim ships node but not wget/curl, so probe with node's fetch.
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/ping || exit 1
+  CMD node -e "fetch('http://127.0.0.1:8080/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/app.js"]
 ```

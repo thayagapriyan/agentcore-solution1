@@ -57,3 +57,27 @@ resource "aws_iam_role_policy" "logs" {
     }]
   })
 }
+
+# Iter 5: invoke the Bedrock model. Strands uses the Converse *Stream* API, so
+# InvokeModelWithResponseStream is required alongside InvokeModel. The default
+# model (Claude Haiku 4.5) is inference-profile-only, so the role needs the
+# inference-profile ARNs plus the underlying anthropic foundation models (the
+# profile fans out to those in any region).
+resource "aws_iam_role_policy" "bedrock_invoke" {
+  role = aws_iam_role.agent_runtime.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ]
+      Resource = [
+        "arn:aws:bedrock:*::foundation-model/anthropic.*",
+        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:application-inference-profile/*"
+      ]
+    }]
+  })
+}

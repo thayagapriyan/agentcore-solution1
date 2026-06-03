@@ -2,7 +2,7 @@
 
 Complete Terraform setup for ECR + IAM + AgentCore Runtime + Gateway.
 
-> Uses the AWS provider v5.70+ (`aws_bedrockagentcore_runtime` resource family). If your provider is older, upgrade with `terraform init -upgrade`.
+> Uses the AWS provider v5.70+ (`aws_bedrockagentcore_*` resource family; the runtime resource is `aws_bedrockagentcore_agent_runtime`). If your provider is older, upgrade with `terraform init -upgrade`.
 
 ---
 
@@ -227,18 +227,27 @@ resource "aws_iam_role_policy" "gateway_invoke" {
 
 ## `runtime.tf`
 
-```hcl
-resource "aws_bedrockagentcore_runtime" "agent" {
-  name        = var.agent_name
-  description = "Strands agent for inventory queries"
-  role_arn    = aws_iam_role.agent_runtime.arn
+The real resource is **`aws_bedrockagentcore_agent_runtime`** (the AWS provider
+renamed it after these docs were first written), the container URI lives inside a
+nested `agent_runtime_artifact { container_configuration { ... } }` block, and
+`agent_runtime_name` must not contain hyphens. A `DEFAULT` endpoint is created
+automatically, so `invoke-agent-runtime` works against `agent_runtime_arn`
+without a separate endpoint resource.
 
-  container_configuration {
-    container_uri = "${aws_ecr_repository.agent.repository_url}:${var.image_tag}"
+```hcl
+resource "aws_bedrockagentcore_agent_runtime" "agent" {
+  agent_runtime_name = replace(var.agent_name, "-", "_")
+  description        = "Strands agent runtime"
+  role_arn           = aws_iam_role.agent_runtime.arn
+
+  agent_runtime_artifact {
+    container_configuration {
+      container_uri = "${aws_ecr_repository.agent.repository_url}:${var.image_tag}"
+    }
   }
 
   network_configuration {
-    network_mode = "PUBLIC"   # or "VPC" with subnet_ids + security_group_ids
+    network_mode = "PUBLIC" # or "VPC" with subnet_ids + security_group_ids
   }
 
   protocol_configuration {
@@ -246,13 +255,14 @@ resource "aws_bedrockagentcore_runtime" "agent" {
   }
 
   environment_variables = {
-    MODEL_ID              = var.model_id
-    AGENTCORE_GATEWAY_URL = aws_bedrockagentcore_gateway.tools.gateway_url
-    LOG_LEVEL             = "info"
+    LOG_LEVEL = "info"
+    MODEL_ID  = var.model_id
+    # AGENTCORE_GATEWAY_URL is appended in the Gateway iteration.
   }
 
   depends_on = [
     aws_iam_role_policy.ecr_pull,
+    aws_iam_role_policy.logs,
     aws_iam_role_policy.bedrock_invoke,
   ]
 }
@@ -341,12 +351,12 @@ output "ecr_repository_url" {
 
 output "agent_runtime_arn" {
   description = "Use with bedrock-agentcore invoke-agent-runtime"
-  value       = aws_bedrockagentcore_runtime.agent.runtime_arn
+  value       = aws_bedrockagentcore_agent_runtime.agent.agent_runtime_arn
 }
 
-output "agent_runtime_endpoint" {
-  description = "HTTPS endpoint (for direct HTTP clients)"
-  value       = aws_bedrockagentcore_runtime.agent.runtime_endpoint
+output "agent_runtime_id" {
+  description = "Runtime id (use with bedrock-agentcore-control get-agent-runtime)"
+  value       = aws_bedrockagentcore_agent_runtime.agent.agent_runtime_id
 }
 
 output "gateway_url" {
