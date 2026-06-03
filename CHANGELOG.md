@@ -108,6 +108,21 @@ Format:
 - Rollback: `terraform destroy` (or `-target=aws_ecr_repository.agent`)
 - Forward-compatibility: IAM role has minimal perms now — Bedrock/Gateway/X-Ray policies get appended in later iterations, never edited in place; all values are variables (no hardcoded account/region in code)
 
+## [Iter 4] — 2026-06-03 — AgentCore Runtime live
+
+- Added: `infra/runtime.tf` (`aws_bedrockagentcore_agent_runtime` wired to the iter-3 ECR image — PUBLIC network, HTTP protocol, `LOG_LEVEL=info`, depends on existing `ecr_pull`/`logs` policies). `infra/outputs.tf` — `agent_runtime_arn` + `agent_runtime_id`.
+- Added: `docs/prompts/iter-4.md`
+- Infra (us-east-1, acct 224193574799): runtime `agentcore_solution1-Gkn5Bz50bd`, ARN `arn:aws:bedrock-agentcore:us-east-1:224193574799:runtime/agentcore_solution1-Gkn5Bz50bd`. DEFAULT endpoint auto-created (no `_endpoint` resource needed).
+- Note: `docs/04-terraform.md` is out of date — uses the non-existent `aws_bedrockagentcore_runtime` with top-level `container_configuration`; real provider (6.47.0) uses `aws_bedrockagentcore_agent_runtime` with nested `agent_runtime_artifact`. Flagged for a follow-up fix.
+- Tests:
+  - `terraform validate` → valid; `terraform plan` → 1 to add, 0 change, 0 destroy
+  - `terraform apply` → 1 added; runtime + DEFAULT endpoint both `READY`
+  - `invoke-agent-runtime --payload '{"prompt":"x"}'` → `statusCode: 200`, `out.json` → `{"result":"hello"}`
+  - CloudWatch `/aws/bedrock-agentcore/runtimes/...-DEFAULT` → `listening on :8080` (container started)
+- Prompt log: [docs/prompts/iter-4.md](docs/prompts/iter-4.md)
+- Rollback: `terraform destroy -target=aws_bedrockagentcore_agent_runtime.agent`
+- Forward-compatibility: env vars minimal (`LOG_LEVEL` only) so iter 5/6 append `MODEL_ID`/`AGENTCORE_GATEWAY_URL` without restructuring; plumbing (ECR→runtime→invoke→response) is proven once here — later iterations change only what's inside `/invocations`
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.
