@@ -81,3 +81,20 @@ resource "aws_iam_role_policy" "bedrock_invoke" {
     }]
   })
 }
+
+# Iter 6: the runtime invokes the Gateway's MCP endpoint with its IAM identity
+# (the Gateway uses AWS_IAM inbound auth). Scoped to this gateway's ARN.
+resource "aws_iam_role_policy" "gateway_invoke" {
+  role = aws_iam_role.agent_runtime.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["bedrock-agentcore:InvokeGateway"]
+      Resource = [
+        aws_bedrockagentcore_gateway.tools.gateway_arn,
+        "${aws_bedrockagentcore_gateway.tools.gateway_arn}/*"
+      ]
+    }]
+  })
+}

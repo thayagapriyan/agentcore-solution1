@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { createAgent } from './agent.js';
+import { createAgent, logGatewayStatus } from './agent.js';
 
 const app = express();
 const port = parseInt(process.env.PORT ?? '8080', 10);
@@ -34,4 +34,5 @@ app.post('/invocations', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`listening on :${port}`);
+  void logGatewayStatus();
 });

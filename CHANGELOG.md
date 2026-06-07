@@ -140,6 +140,24 @@ Format:
 - Rollback: `terraform apply -var="image_tag=latest"` (reverts to iter-4 hello image; `latest` left untouched); optionally `terraform destroy -target=aws_iam_role_policy.bedrock_invoke`
 - Forward-compatibility: `MODEL_ID` env-driven (swap models, no code change); `tools: []` explicit for iter 6/7; `bedrock_invoke` is a new policy resource (existing ones untouched); `sessionId` echoed for the session iteration; `latest` tag preserved for image-revert rollback
 
+## [Iter 6] — 2026-06-03 — Add Gateway (empty)
+
+- Added: `infra/gateway.tf` — Gateway execution role + `aws_bedrockagentcore_gateway` (MCP protocol, `AWS_IAM` inbound auth, **no targets yet**). `src/agent.ts` — conditional shared `McpClient` (`continueOnError: true`) included in the agent's `tools` only when `AGENTCORE_GATEWAY_URL` is set, plus a one-time `logGatewayStatus` probe.
+- Changed: `infra/iam.tf` — appended `gateway_invoke` policy (`bedrock-agentcore:InvokeGateway` on the gateway ARN). `infra/runtime.tf` — appended `AGENTCORE_GATEWAY_URL` env + `gateway_invoke` dependency. `infra/outputs.tf` — added `gateway_url`/`gateway_id`. `src/app.ts` — call `logGatewayStatus()` after `listen`.
+- Auth: `AWS_IAM` (verified `authorizerType` ∈ `CUSTOM_JWT|AWS_IAM|NONE|AUTHENTICATE_ONLY`; `authorizerConfiguration` only required for `CUSTOM_JWT`) — least friction, no Cognito; JWT deferred.
+- Infra (us-east-1, acct 224193574799): gateway `agentcore-solution1-gw-tkmu8umbyq`, url `https://agentcore-solution1-gw-tkmu8umbyq.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp`. Runtime → version 4. Image `:iter6`.
+- Tests:
+  - `npm run build` clean; `terraform fmt/validate` clean
+  - Local (gateway unset) → `not configured, 0 tools`; `/ping` 200; `/invocations` ok
+  - Local (gateway URL unreachable) → `continueOnError` warning; `/invocations` still ok (0 tools)
+  - `terraform plan` → 3 add, 1 change, 0 destroy; `apply` → gateway created, runtime v4 `READY`
+  - `docker push :iter6` → digest `sha256:cdefb91b…`
+  - Live `invoke-agent-runtime` → 200, `{"result":"2+2 equals 4."}` (behavior unchanged)
+  - CloudWatch (live) → `gateway: connected, 0 tools loaded`
+- Prompt log: [docs/prompts/iter-6.md](docs/prompts/iter-6.md)
+- Rollback: `terraform destroy -target=aws_bedrockagentcore_gateway.tools` (agent auto-reverts to no-tools via the conditional); or unset `AGENTCORE_GATEWAY_URL`; image revert `terraform apply -var="image_tag=iter5b"`
+- Forward-compatibility: Gateway connection is conditional (tools optional forever); gateway has no targets and its role no perms yet → iter 7 appends a target + `lambda:InvokeFunction` without editing existing resources; env block gained a key, not restructured; `latest`/`iter5b` tags preserved for rollback
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

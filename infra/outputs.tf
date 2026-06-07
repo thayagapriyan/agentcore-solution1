@@ -17,3 +17,13 @@ output "agent_runtime_id" {
   description = "AgentCore runtime ID"
   value       = aws_bedrockagentcore_agent_runtime.agent.agent_runtime_id
 }
+
+output "gateway_url" {
+  description = "MCP endpoint URL — injected into the runtime as AGENTCORE_GATEWAY_URL"
+  value       = aws_bedrockagentcore_gateway.tools.gateway_url
+}
+
+output "gateway_id" {
+  description = "AgentCore gateway ID"
+  value       = aws_bedrockagentcore_gateway.tools.gateway_id
+}
