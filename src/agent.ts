@@ -1,4 +1,5 @@
-import { Agent, BedrockModel, McpClient } from '@strands-agents/sdk';
+import { Agent, BedrockModel, McpClient, SessionManager } from '@strands-agents/sdk';
+import { S3SnapshotStorage } from './s3-snapshot-storage.js';
 
 const SYSTEM_PROMPT = 'You are a helpful assistant.';
 
@@ -32,16 +33,44 @@ function getGatewayClient(): McpClient | null {
   return gatewayClient;
 }
 
-// Fresh agent per invocation: no conversation state carries across requests
-// (sessions arrive in a later iteration). The model + gateway clients are reused.
-export function createAgent(): Agent {
+// Sessions are optional forever: when SESSION_BUCKET is set, conversation state
+// is persisted to S3 (durable, multi-instance) via a SessionManager keyed by
+// sessionId — the agent restores prior turns on construction and saves after each
+// invocation. When unset, the agent is stateless (original behavior). The S3
+// client is reused across requests; a SessionManager is per-session.
+let sessionStorage: S3SnapshotStorage | null = null;
+let sessionStorageResolved = false;
+
+function getSessionStorage(): S3SnapshotStorage | null {
+  if (sessionStorageResolved) return sessionStorage;
+  sessionStorageResolved = true;
+  const bucket = process.env.SESSION_BUCKET;
+  if (bucket) {
+    sessionStorage = new S3SnapshotStorage(bucket);
+  }
+  return sessionStorage;
+}
+
+// Fresh Agent per invocation (the Agent carries an invocation lock + history, so
+// a shared instance would bleed state across concurrent requests). When a
+// sessionId is supplied and storage is configured, a SessionManager hydrates the
+// agent from prior turns and persists the updated snapshot afterward.
+export function createAgent(sessionId?: string): Agent {
   const client = getGatewayClient();
   const tools = client ? [client] : [];
+
+  const storage = getSessionStorage();
+  const sessionManager =
+    storage && sessionId
+      ? new SessionManager({ sessionId, storage: { snapshot: storage } })
+      : undefined;
+
   return new Agent({
     model: getModel(),
     tools,
     systemPrompt: SYSTEM_PROMPT,
     printer: false,
+    ...(sessionManager ? { sessionManager } : {}),
   });
 }
 

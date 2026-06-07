@@ -23,7 +23,7 @@ app.post('/invocations', async (req, res) => {
     typeof req.body?.sessionId === 'string' ? req.body.sessionId : randomUUID();
 
   try {
-    const agent = createAgent();
+    const agent = createAgent(sessionId);
     const result = await agent.invoke(prompt);
     res.json({ result: result.toString(), sessionId });
   } catch (err) {

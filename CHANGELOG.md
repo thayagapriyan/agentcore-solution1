@@ -213,6 +213,24 @@ Format:
 - Forward-compatibility: establishes the input-taking tool template (`input_schema { property { name/type/required } }`) for all future tools; per-tool isolation lets iter 8b/8c append without editing 8a; never edit a tool's schema in place (add `v2`, deprecate); `TOOLS_REV` stays the refresh lever; agent code untouched so tools stay optional/auto-discovered.
 - Known follow-ups (carried from iter-7): `:latest` ECR tag still gone (apply needs `-var="image_tag=iter6"`); dead `gateway_invoke` policy under NONE auth.
 
+## [Iter 9] — 2026-06-06 — Sessions and memory
+
+- Added: `src/s3-snapshot-storage.ts` (custom Strands `SnapshotStorage` over `@aws-sdk/client-s3`, mirroring the SDK's `FileStorage` key layout); `infra/session.tf` (S3 session bucket — SSE-S3, public access blocked, 30-day lifecycle — + `session_rw` runtime-role policy). Dep `@aws-sdk/client-s3`.
+- Changed: `src/agent.ts` (`createAgent(sessionId?)` builds a `SessionManager` with S3 storage when `SESSION_BUCKET` is set, else stateless); `src/app.ts` (passes `sessionId` into `createAgent`); `infra/runtime.tf` (added `SESSION_BUCKET` env + `session_rw` dependency); `infra/outputs.tf` (`session_bucket`).
+- **Design override (verified before coding)**: the plan defaulted to `aws_bedrockagentcore_memory`, but the installed Strands SDK has **no AgentCore Memory adapter** — it persists sessions via a pluggable `SnapshotStorage` (ships `FileStorage` only), and the SDK's own interface docs name S3 as the intended custom backend. So sessions persist to **S3**, not AgentCore Memory. Sessions are optional/forward-compatible via `SESSION_BUCKET` (unset → stateless).
+- Infra (us-east-1, acct 224193574799): bucket `agentcore-solution1-sessions-224193574799`; image `:iter9` (digest `sha256:a1cdc0ea…`); runtime swapped to `:iter9`, READY.
+- Tests:
+  - `npm run build` clean; `docker buildx` ARM64 → `arm64/linux`; local container (no bucket) `/ping` 200 + `"say ping"`→`"ping"` (stateless intact)
+  - `terraform fmt/validate` clean; `plan` (`-var=image_tag=iter9`) → 5 add, 1 change, 0 destroy; `push` + `apply` → bucket created, runtime READY
+  - **two-turn same sessionId**: "My name is Priya" → … → "What is my name?" → **"Your name is Priya!"** (memory works)
+  - **no crossover** (different sessionId) → "you haven't told me your name" (correct isolation)
+  - S3 persistence: `snapshot_latest.json` (1421 B) at `mem-test-priya-001/scopes/agent/agent/snapshots/`
+  - always-green: add tool → `17`; boot log `gateway: connected, 2 tools loaded`; no-sessionId request → stateless 200
+- Prompt log: [docs/prompts/iter-9.md](docs/prompts/iter-9.md)
+- Rollback: unset `SESSION_BUCKET` (`terraform apply -var="image_tag=iter9"`) → stateless, conversations still work; image revert `terraform apply -var="image_tag=iter6"`; full: `git revert` + `apply -var="image_tag=iter6"` (+ empty/destroy bucket).
+- Forward-compatibility: `SESSION_BUCKET` keeps sessions optional forever; `S3SnapshotStorage` implements the SDK's stable interface so a future AgentCore Memory adapter swaps in behind `createAgent` unchanged; bucket layout matches SDK convention (FileStorage ↔ S3 interchangeable); `immutable_history` + manifest implemented for future checkpoint/restore.
+- Known follow-ups: apply now needs `-var="image_tag=iter9"` (was iter6); default conversation manager (SlidingWindow/40) may need tuning for long sessions; bucket CMK/access-logging deferred to iter 12; carried dead `gateway_invoke` policy.
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

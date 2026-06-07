@@ -47,3 +47,8 @@ output "add_tool_target_id" {
   description = "Iter 8a: gateway target id for the add MCP tool"
   value       = aws_bedrockagentcore_gateway_target.add_tool.target_id
 }
+
+output "session_bucket" {
+  description = "Iter 9: S3 bucket holding conversation snapshots (SESSION_BUCKET)"
+  value       = aws_s3_bucket.sessions.id
+}

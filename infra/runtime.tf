@@ -37,6 +37,10 @@ resource "aws_bedrockagentcore_agent_runtime" "agent" {
     # this marker whenever the tool set changes to force a new runtime version
     # (and thus a fresh container) without rebuilding the image.
     TOOLS_REV = "iter8a-add-tool"
+    # Iter 9: durable sessions. When set, the agent persists conversation
+    # snapshots to this S3 bucket (keyed by sessionId) and restores them on the
+    # next turn. Unset → stateless. Optional/forward-compatible.
+    SESSION_BUCKET = aws_s3_bucket.sessions.id
   }
 
   depends_on = [
@@ -44,5 +48,6 @@ resource "aws_bedrockagentcore_agent_runtime" "agent" {
     aws_iam_role_policy.logs,
     aws_iam_role_policy.bedrock_invoke,
     aws_iam_role_policy.gateway_invoke,
+    aws_iam_role_policy.session_rw,
   ]
 }
