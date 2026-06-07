@@ -37,15 +37,16 @@ jobs:
         with:
           terraform_version: 1.15.4
 
-      # Apply ONLY the OIDC provider + deploy role. -target is appropriate here:
+      # Apply ONLY the deploy role + its policies. -target is appropriate here:
       # this is a deliberate partial apply to lay the trust anchor; the next full
-      # deploy.yml run reconciles everything else.
-      - name: Create OIDC provider + deploy role
+      # deploy.yml run reconciles everything else. The OIDC provider already
+      # exists account-wide and is consumed via a data source, so it isn't
+      # targeted (nothing to create).
+      - name: Create deploy role
         working-directory: infra
         run: |
           terraform init
           terraform apply -auto-approve \
-            -target=aws_iam_openid_connect_provider.github \
             -target=aws_iam_role.github_deploy \
             -target=aws_iam_role_policy_attachment.github_deploy_poweruser \
             -target=aws_iam_role_policy.github_deploy_iam \

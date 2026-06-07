@@ -1,20 +1,20 @@
 # Iter 11: CI/CD via GitHub Actions + OIDC. Additive — no existing resource is
-# changed. The provider + role here are the trust anchor the deploy workflow
-# assumes; after the one-time bootstrap workflow creates them, every later change
-# to this file deploys through the pipeline like any other infra.
+# changed. The deploy role here is the trust anchor the deploy workflow assumes;
+# after the one-time bootstrap workflow creates it, every later change to this
+# file deploys through the pipeline like any other infra.
 #
 # Bootstrap chicken-and-egg: the role can't create itself from inside the
 # workflow on the very first run, so .github/workflows/bootstrap.yml applies just
-# these two resources once (using a temporary Actions secret), then writes the
-# role ARN into Actions vars. See that workflow for the exact sequence.
+# the role (using a temporary Actions secret), then writes the role ARN into
+# Actions vars. See that workflow for the exact sequence.
 
-# GitHub's OIDC issuer. The thumbprint is no longer validated by AWS for the
-# github token issuer, but the provider requires the argument; this is GitHub's
-# well-known intermediate CA thumbprint.
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+# The GitHub OIDC provider is an account-wide singleton (one per issuer URL) and
+# is shared across projects, so we reference the existing one rather than own it
+# here — a `terraform destroy` of this stack must never remove a provider other
+# repos depend on. The provider is created out-of-band (it already exists in this
+# account); this stack only consumes its ARN for the role trust policy.
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 data "aws_iam_policy_document" "github_deploy_trust" {
@@ -23,7 +23,7 @@ data "aws_iam_policy_document" "github_deploy_trust" {
     effect  = "Allow"
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
     condition {
       test     = "StringEquals"
@@ -84,21 +84,14 @@ data "aws_iam_policy_document" "github_deploy_iam" {
     ]
   }
 
-  # The OIDC provider is a global IAM resource (no name prefix possible). Limited
-  # to the GitHub issuer so the role can reconcile its own trust anchor.
+  # The deploy role only READS the GitHub OIDC provider (via the data source on
+  # every plan/apply) — it doesn't manage it, since the provider is a shared,
+  # account-wide singleton owned outside this stack's lifecycle.
   statement {
-    sid    = "ManageGithubOidcProvider"
-    effect = "Allow"
-    actions = [
-      "iam:GetOpenIDConnectProvider",
-      "iam:CreateOpenIDConnectProvider",
-      "iam:UpdateOpenIDConnectProviderThumbprint",
-      "iam:AddClientIDToOpenIDConnectProvider",
-      "iam:TagOpenIDConnectProvider",
-    ]
-    resources = [
-      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
-    ]
+    sid       = "ReadGithubOidcProvider"
+    effect    = "Allow"
+    actions   = ["iam:GetOpenIDConnectProvider"]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"]
   }
 }
 
