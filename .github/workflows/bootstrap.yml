@@ -35,7 +35,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.6
+          terraform_version: 1.15.4
 
       # Apply ONLY the OIDC provider + deploy role. -target is appropriate here:
       # this is a deliberate partial apply to lay the trust anchor; the next full
