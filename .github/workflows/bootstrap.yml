@@ -12,7 +12,9 @@ name: Bootstrap OIDC
 #        AWS_REGION        e.g. us-east-1
 #        ECR_REPOSITORY    e.g. agentcore-solution1   (the agent_name)
 #   3. Actions tab → "Bootstrap OIDC" → Run workflow.
-#   4. After it succeeds, DELETE the two bootstrap secrets. Deploy uses OIDC now.
+#   4. Read the workflow summary: copy the printed role ARN into a new Actions
+#      variable AWS_ROLE_ARN, then DELETE the two bootstrap secrets. Deploy then
+#      uses OIDC — no keys, ever again.
 
 on:
   workflow_dispatch:
@@ -52,14 +54,30 @@ jobs:
             -target=aws_iam_role_policy.github_deploy_iam \
             -target=aws_iam_role_policy.github_deploy_tfstate
 
-      # Write the role ARN into Actions vars so deploy.yml is self-configuring —
-      # nothing to copy-paste by hand.
-      - name: Publish deploy role ARN to Actions vars
+      # The default GITHUB_TOKEN can't write Actions variables, so instead of
+      # auto-setting it we print the role ARN with copy-paste instructions. The
+      # ARN is stable, so this is a genuine one-time manual step.
+      - name: Print deploy role ARN + next steps
         working-directory: infra
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ROLE_ARN=$(terraform output -raw github_deploy_role_arn)
-          gh variable set AWS_ROLE_ARN --body "$ROLE_ARN"
-          echo "Set AWS_ROLE_ARN=$ROLE_ARN"
-          echo "Bootstrap complete. Delete the AWS_BOOTSTRAP_* secrets now."
+          echo "::notice title=Deploy role ARN::$ROLE_ARN"
+          echo ""
+          echo "=================================================================="
+          echo " BOOTSTRAP SUCCEEDED — two manual steps remain:"
+          echo "=================================================================="
+          echo ""
+          echo " 1. Set the Actions variable so Deploy can assume the role:"
+          echo "      GitHub → Settings → Secrets and variables → Actions"
+          echo "        → Variables tab → New repository variable"
+          echo "          Name:  AWS_ROLE_ARN"
+          echo "          Value: $ROLE_ARN"
+          echo ""
+          echo " 2. Delete the now-unneeded bootstrap secrets:"
+          echo "      same page → Secrets tab → delete:"
+          echo "        AWS_BOOTSTRAP_ACCESS_KEY_ID"
+          echo "        AWS_BOOTSTRAP_SECRET_ACCESS_KEY"
+          echo ""
+          echo " After step 1, push to main (or run Deploy manually) — it will"
+          echo " assume this role via OIDC. No more keys needed, ever."
+          echo "=================================================================="

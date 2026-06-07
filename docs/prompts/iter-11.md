@@ -47,9 +47,30 @@ AWS keys).
   **Why**: CLAUDE.md keeps lint deps out until an iteration explicitly asks; iter 11
   doesn't.
 
-- **Decision**: OIDC role's first apply is bootstrapped locally by the user.
+- **Decision**: OIDC role's first apply is bootstrapped by a dedicated in-CI
+  `bootstrap.yml` (manual dispatch, temporary keys), not a local terraform run.
   **Why**: The deploy workflow assumes the role to run; the role can't create itself
-  from inside the workflow on the first run (chicken-and-egg).
+  from inside the workflow on the first run (chicken-and-egg). Keeping it in-CI means
+  no local tooling is required.
+
+- **Decision**: The GitHub OIDC provider is consumed via a `data` source, not owned
+  by this stack.
+  **Why**: It already exists account-wide (one per issuer URL) and is shared across
+  projects; `CreateOpenIDConnectProvider` returned 409 EntityAlreadyExists. Owning it
+  would risk a `terraform destroy` here removing a provider other repos depend on.
+
+- **Decision**: `bootstrap.yml` PRINTS the role ARN with copy-paste instructions
+  rather than auto-setting the `AWS_ROLE_ARN` Actions variable.
+  **Alternatives considered**: `administration: write` on GITHUB_TOKEN (often still
+  403 by repo policy); a fine-grained PAT secret (adds a secret to manage).
+  **Why**: The default GITHUB_TOKEN can't write Actions variables (403 Resource not
+  accessible by integration). The ARN is stable, so a one-time manual paste is
+  reliable and avoids introducing another secret.
+
+- **Decision**: Workflows pin Terraform `1.15.4` (the user's local version).
+  **Alternatives considered**: `1.6.6` (the doc skeleton's value).
+  **Why**: The S3 backend uses `use_lockfile`, which requires Terraform >= 1.10;
+  1.6.6 failed init with "Unsupported argument".
 
 ---
 
