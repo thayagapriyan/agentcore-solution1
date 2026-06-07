@@ -36,7 +36,7 @@ resource "aws_bedrockagentcore_agent_runtime" "agent" {
     # the container, so a fresh container is needed to pick up new tools. Bump
     # this marker whenever the tool set changes to force a new runtime version
     # (and thus a fresh container) without rebuilding the image.
-    TOOLS_REV = "iter7-hello-tool"
+    TOOLS_REV = "iter8a-add-tool"
   }
 
   depends_on = [

@@ -37,3 +37,13 @@ output "hello_tool_target_id" {
   description = "Iter 7: gateway target id for the hello_tool MCP tool"
   value       = aws_bedrockagentcore_gateway_target.hello_tool.target_id
 }
+
+output "add_tool_lambda_arn" {
+  description = "Iter 8a: ARN of the add-tool Lambda backing the gateway target"
+  value       = aws_lambda_function.add_tool.arn
+}
+
+output "add_tool_target_id" {
+  description = "Iter 8a: gateway target id for the add MCP tool"
+  value       = aws_bedrockagentcore_gateway_target.add_tool.target_id
+}

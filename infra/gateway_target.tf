@@ -56,3 +56,65 @@ resource "aws_iam_role_policy" "gateway_lambda" {
     }]
   })
 }
+
+# ---------------------------------------------------------------------------
+# Iter 8a: register the add-tool. Same shape as hello-tool, but the
+# inline_payload carries a real input_schema with two required number
+# properties (a, b) — the first input-taking tool. Additive: hello-tool and its
+# policy are untouched.
+# ---------------------------------------------------------------------------
+resource "aws_bedrockagentcore_gateway_target" "add_tool" {
+  gateway_identifier = aws_bedrockagentcore_gateway.tools.gateway_id
+  name               = "add-tool"
+  description        = "Adds two numbers (iter-8a, first input-taking tool)"
+
+  target_configuration {
+    mcp {
+      lambda {
+        lambda_arn = aws_lambda_function.add_tool.arn
+
+        tool_schema {
+          inline_payload {
+            name        = "add"
+            description = "Add two numbers and return their sum. Use it for arithmetic addition."
+
+            input_schema {
+              type = "object"
+
+              property {
+                name        = "a"
+                type        = "number"
+                description = "The first addend"
+                required    = true
+              }
+              property {
+                name        = "b"
+                type        = "number"
+                description = "The second addend"
+                required    = true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  credential_provider_configuration {
+    gateway_iam_role {}
+  }
+}
+
+# Gateway role also needs to invoke the add-tool Lambda. New policy resource —
+# the iter-7 gateway_lambda policy is left untouched (additive per-tool).
+resource "aws_iam_role_policy" "gateway_lambda_add" {
+  role = aws_iam_role.gateway.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "lambda:InvokeFunction"
+      Resource = aws_lambda_function.add_tool.arn
+    }]
+  })
+}
