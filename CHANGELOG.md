@@ -158,6 +158,14 @@ Format:
 - Rollback: `terraform destroy -target=aws_bedrockagentcore_gateway.tools` (agent auto-reverts to no-tools via the conditional); or unset `AGENTCORE_GATEWAY_URL`; image revert `terraform apply -var="image_tag=iter5b"`
 - Forward-compatibility: Gateway connection is conditional (tools optional forever); gateway has no targets and its role no perms yet → iter 7 appends a target + `lambda:InvokeFunction` without editing existing resources; env block gained a key, not restructured; `latest`/`iter5b` tags preserved for rollback
 
+## [Docs follow-up] — 2026-06-06 — Sync deployment docs to shipped iter-6 code
+
+- Changed: `docs/03-agent-code.md` — `src/agent.ts` now shows the shipped iter-6 factory (conditional `McpClient` gateway tools + `logGatewayStatus` probe) instead of the iter-5 model-only stub; `src/app.ts` shows the `logGatewayStatus()` boot call; "tools not shown" note replaced with an iter-7 forward note.
+- Changed: `docs/04-terraform.md` — corrected to match shipped infra: `variables.tf` defaults (`agent_name=agentcore-solution1`, Haiku 4.5 inference-profile `model_id`); `iam.tf` `bedrock_invoke` (three ARNs: foundation-model + inference-profile + application-inference-profile), `logs` split out from a bundled `observability` (X-Ray deferred to iter 10), `gateway_invoke` (`gateway_arn` + `/*`); `gateway.tf` (empty gateway, `authorizer_type="AWS_IAM"`, no JWT/target — Lambda target moved to a labeled iter-7 block); `runtime.tf` (`AGENTCORE_GATEWAY_URL` env wired, `gateway_invoke` in `depends_on`); `outputs.tf` (added `agent_runtime_role_arn`, `gateway_id`); cost table authorizer row → `AWS_IAM`.
+- These resolve the two doc-debt items flagged in the Iter 4 and Iter 5 entries.
+- Tests: N/A (docs only); cross-checked each block against the live `infra/*.tf` and `src/*.ts`.
+- Rollback: `git revert` this commit (docs only — no code or AWS impact).
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

@@ -112,13 +112,18 @@ export interface InvocationResponse {
 
 ## `src/agent.ts` — Strands agent factory
 
-As shipped in iter 5 — model only, no tools yet. The `Agent` is created **per
-invocation** (it carries conversation history and an invocation lock, so a
-shared instance would bleed state across requests); the `BedrockModel` client is
-reused.
+As shipped in iter 6 — `BedrockModel` plus an **optional** Gateway `McpClient`.
+The `Agent` is created **per invocation** (it carries conversation history and an
+invocation lock, so a shared instance would bleed state across requests); the
+`BedrockModel` and `McpClient` clients are reused across invocations.
+
+The Gateway connection is **conditional**: tools are wired only when
+`AGENTCORE_GATEWAY_URL` is set, and `continueOnError: true` keeps an invocation
+working (with 0 tools) even if the gateway is unreachable or auth fails — so the
+agent runs identically whether or not a gateway exists.
 
 ```typescript
-import { Agent, BedrockModel } from "@strands-agents/sdk";
+import { Agent, BedrockModel, McpClient } from "@strands-agents/sdk";
 
 const SYSTEM_PROMPT = "You are a helpful assistant.";
 
@@ -137,21 +142,55 @@ function getModel(): BedrockModel {
   }));
 }
 
+// Gateway is optional forever: connected only when AGENTCORE_GATEWAY_URL is set.
+let gatewayResolved = false;
+let gatewayClient: McpClient | null = null;
+
+function getGatewayClient(): McpClient | null {
+  if (gatewayResolved) return gatewayClient;
+  gatewayResolved = true;
+  const url = process.env.AGENTCORE_GATEWAY_URL;
+  if (url) {
+    gatewayClient = new McpClient({ url, continueOnError: true });
+  }
+  return gatewayClient;
+}
+
 export function createAgent(): Agent {
+  const client = getGatewayClient();
+  const tools = client ? [client] : [];
   return new Agent({
     model: getModel(),
-    tools: [],
+    tools,
     systemPrompt: SYSTEM_PROMPT,
     printer: false,
   });
 }
+
+// One-time, non-fatal probe so logs show whether the gateway is wired and how
+// many tools it exposes. Called once after the server starts listening.
+export async function logGatewayStatus(): Promise<void> {
+  const client = getGatewayClient();
+  if (!client) {
+    console.log("gateway: not configured (AGENTCORE_GATEWAY_URL unset), 0 tools");
+    return;
+  }
+  try {
+    const tools = await client.listTools();
+    console.log(`gateway: connected, ${tools.length} tools loaded`);
+  } catch (err) {
+    console.warn(
+      "gateway: connection failed, continuing with 0 tools —",
+      (err as Error).message,
+    );
+  }
+}
 ```
 
-> **Iter 6+ (Gateway tools):** the `tools` array also accepts `McpClient`
-> instances, so a Gateway connection is added by constructing an `McpClient`
-> (from `@strands-agents/sdk`) against `process.env.AGENTCORE_GATEWAY_URL` and
-> passing it in `tools`. The exact wiring is validated and documented in the
-> Gateway iteration — not shown here to avoid presenting unverified API shape.
+> **Tools (iter 7+):** the `McpClient` exposes whatever tool targets are
+> registered on the Gateway in Terraform (`aws_bedrockagentcore_gateway_target`).
+> No agent-code change is needed to add a tool — `listTools()` picks it up once
+> the target is applied. Until then the agent runs with 0 tools.
 
 ---
 
@@ -160,7 +199,7 @@ export function createAgent(): Agent {
 ```typescript
 import express from "express";
 import { randomUUID } from "node:crypto";
-import { createAgent } from "./agent.js";
+import { createAgent, logGatewayStatus } from "./agent.js";
 
 const app = express();
 const port = parseInt(process.env.PORT ?? "8080", 10);
@@ -198,6 +237,8 @@ app.post("/invocations", async (req, res) => {
 
 app.listen(port, () => {
   console.log(`listening on :${port}`);
+  // One-time gateway probe (non-fatal) so the logs show tool status at boot.
+  void logGatewayStatus();
 });
 ```
 
