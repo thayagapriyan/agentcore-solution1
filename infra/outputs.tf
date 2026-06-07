@@ -52,3 +52,8 @@ output "session_bucket" {
   description = "Iter 9: S3 bucket holding conversation snapshots (SESSION_BUCKET)"
   value       = aws_s3_bucket.sessions.id
 }
+
+output "github_deploy_role_arn" {
+  description = "Iter 11: role GitHub Actions assumes via OIDC — set as the AWS_ROLE_ARN Actions var"
+  value       = aws_iam_role.github_deploy.arn
+}

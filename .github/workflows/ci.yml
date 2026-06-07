@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# No AWS access on PRs — checks are static only.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Terraform format check
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      # validate needs init, but the S3 backend requires AWS creds we don't have
+      # on PRs. -backend=false initializes providers only, which is enough to
+      # validate the configuration.
+      - name: Terraform validate
+        working-directory: infra
+        run: |
+          terraform init -backend=false
+          terraform validate

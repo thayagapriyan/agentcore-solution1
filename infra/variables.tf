@@ -21,3 +21,11 @@ variable "model_id" {
   type        = string
   default     = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
+
+# Iter 11: scopes the GitHub Actions OIDC trust to this repo. Defaulted to the
+# git remote so `terraform apply` stays argument-free; override for a fork.
+variable "github_repo" {
+  description = "GitHub owner/repo allowed to assume the CI/CD deploy role via OIDC"
+  type        = string
+  default     = "thayagapriyan/agentcore-solution1"
+}
