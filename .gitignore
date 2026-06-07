@@ -29,6 +29,9 @@ Thumbs.db
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl
+*.tfplan
+# Iter 7: archive_file output for the inline hello-tool Lambda (built at plan time)
+infra/.build/
 
 # AWS / secrets
 *.pem

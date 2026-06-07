@@ -27,3 +27,13 @@ output "gateway_id" {
   description = "AgentCore gateway ID"
   value       = aws_bedrockagentcore_gateway.tools.gateway_id
 }
+
+output "hello_tool_lambda_arn" {
+  description = "Iter 7: ARN of the hello-tool Lambda backing the gateway target"
+  value       = aws_lambda_function.hello_tool.arn
+}
+
+output "hello_tool_target_id" {
+  description = "Iter 7: gateway target id for the hello_tool MCP tool"
+  value       = aws_bedrockagentcore_gateway_target.hello_tool.target_id
+}

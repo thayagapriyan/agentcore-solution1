@@ -19,9 +19,14 @@ resource "aws_iam_role" "gateway" {
 # Gateway names must match ^([0-9a-zA-Z][-]?){1,100}$ — hyphens OK, underscores
 # NOT (the opposite of the runtime name, which disallows hyphens).
 resource "aws_bedrockagentcore_gateway" "tools" {
-  name            = "${var.agent_name}-gw"
-  description     = "MCP tools gateway (iter 6: empty, no targets)"
-  role_arn        = aws_iam_role.gateway.arn
-  protocol_type   = "MCP"
-  authorizer_type = "AWS_IAM"
+  name          = "${var.agent_name}-gw"
+  description   = "MCP tools gateway"
+  role_arn      = aws_iam_role.gateway.arn
+  protocol_type = "MCP"
+  # Iter 7: NONE (no inbound auth). The Strands McpClient transport makes
+  # unsigned HTTPS calls — it supports OAuth/JWT and static headers but cannot
+  # SigV4-sign, so the iter-6 AWS_IAM choice left the agent unable to authenticate
+  # to the gateway (0 tools loaded). NONE lets the agent reach the MCP endpoint;
+  # JWT auth is revisited in the production-hardening iteration.
+  authorizer_type = "NONE"
 }

@@ -166,6 +166,26 @@ Format:
 - Tests: N/A (docs only); cross-checked each block against the live `infra/*.tf` and `src/*.ts`.
 - Rollback: `git revert` this commit (docs only — no code or AWS impact).
 
+## [Iter 7] — 2026-06-06 — First tool via Gateway
+
+- Added: `infra/lambda.tf` (inline hello-tool Lambda — Node 20, ARM64, returns `{greeting:"hi from lambda"}` + log-only role + `archive_file` zip); `infra/gateway_target.tf` (`aws_bedrockagentcore_gateway_target` MCP/Lambda, zero-arg `hello_tool` schema, gateway-IAM-role auth + appended `gateway_lambda` `lambda:InvokeFunction` policy).
+- Changed: `infra/versions.tf` (added `hashicorp/archive` provider); `infra/runtime.tf` (added `TOOLS_REV` env var to force a fresh container when the tool set changes); `infra/outputs.tf` (added `hello_tool_lambda_arn`, `hello_tool_target_id`); `.gitignore` (ignore `*.tfplan`, `infra/.build/`).
+- **Gateway auth pivot**: `infra/gateway.tf` `authorizer_type` AWS_IAM → **NONE**. The Strands SDK `McpClient` transport makes unsigned MCP calls (supports OAuth/JWT/static-headers, no SigV4), so the iter-6 AWS_IAM gateway left the agent loading 0 tools. NONE removes the inbound auth layer (API accepted it); JWT deferred to iter 12. Changing `authorizer_type` forces gateway replacement → new URL `...-lloka4bsyz...` (flows into the runtime env automatically). Infra-only — no agent code change, no Docker rebuild.
+- Infra (us-east-1, acct 224193574799): Lambda `agentcore-solution1-hello-tool`; gateway target `hello-tool` (id `NQUICMUMNY`, READY); gateway replaced → `agentcore-solution1-gw-lloka4bsyz`; runtime pinned to `:iter6`, new version, READY.
+- Tests:
+  - `terraform fmt -check`/`validate` → clean (target `name` needs a hyphen, not underscore)
+  - `terraform plan` (tool, `-var=image_tag=iter6`) → 5 add, 0 change, 0 destroy; `apply` → target READY
+  - direct `aws lambda invoke` → `{"greeting":"hi from lambda"}` (200)
+  - `apply` (NONE auth) → 2 add, 2 change, 2 destroy; gateway replaced, runtime READY
+  - fresh-container boot log → `gateway: connected, 1 tools loaded`
+  - live invoke "call your hello_tool and reply with exactly the greeting…" → `{"result":"hi from lambda"}`
+  - Lambda genuinely executed: CloudWatch `AWS/Lambda Invocations` Sum=1 (not hallucinated)
+  - always-green: `"what is 2+2?"` (non-tool) → `"2 + 2 = 4…"`, 200
+- Prompt log: [docs/prompts/iter-7.md](docs/prompts/iter-7.md)
+- Rollback: `terraform destroy -var="image_tag=iter6" -target=aws_bedrockagentcore_gateway_target.hello_tool -target=aws_lambda_function.hello_tool -target=aws_iam_role.hello_tool -target=aws_iam_role_policy.gateway_lambda` (agent loses the tool, still responds with 0 tools); full revert: `git revert` the commit + `terraform apply -var="image_tag=iter6"`.
+- Forward-compatibility: tool target pattern standardized for iter 8 (copy `lambda.tf` + `gateway_target.tf`, append-only); `TOOLS_REV` is the reusable container-refresh lever; gateway auth deliberately left at NONE (JWT is iter 12, and must use `McpClient` headers/auth — NOT SigV4); agent code untouched so tools stay optional forever.
+- Known follow-ups (see prompt log): `:latest` ECR tag expired (keep-10 lifecycle) → every apply must pass `-var="image_tag=iter6"` until next image push; `gateway_invoke` IAM policy is now dead weight under NONE auth (harmless, left additive).
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

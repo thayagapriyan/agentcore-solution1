@@ -31,6 +31,12 @@ resource "aws_bedrockagentcore_agent_runtime" "agent" {
     LOG_LEVEL             = "info"
     MODEL_ID              = var.model_id
     AGENTCORE_GATEWAY_URL = aws_bedrockagentcore_gateway.tools.gateway_url
+    # Iter 7: the agent caches the gateway tool list per container lifetime
+    # (boot-time listTools()). Adding/changing a gateway target does NOT restart
+    # the container, so a fresh container is needed to pick up new tools. Bump
+    # this marker whenever the tool set changes to force a new runtime version
+    # (and thus a fresh container) without rebuilding the image.
+    TOOLS_REV = "iter7-hello-tool"
   }
 
   depends_on = [
