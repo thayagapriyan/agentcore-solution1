@@ -6,6 +6,11 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.70.0"
     }
+    # Iter 7: zips the inline hello-tool Lambda source at plan time.
+    archive = {
+      source  = "hashicorp/archive"
+      version = ">= 2.4.0"
+    }
   }
 
   # Remote state in the shared tfstate bucket (us-east-1, versioned).
