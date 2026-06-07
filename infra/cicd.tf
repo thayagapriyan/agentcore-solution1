@@ -86,7 +86,16 @@ data "aws_iam_policy_document" "github_deploy_iam" {
 
   # The deploy role only READS the GitHub OIDC provider (via the data source on
   # every plan/apply) — it doesn't manage it, since the provider is a shared,
-  # account-wide singleton owned outside this stack's lifecycle.
+  # account-wide singleton owned outside this stack's lifecycle. The data source
+  # resolves the provider by URL, which requires ListOpenIDConnectProviders (a
+  # list action with no resource-level scoping, hence "*") to find the ARN, then
+  # GetOpenIDConnectProvider (scoped) to read it.
+  statement {
+    sid       = "ListOidcProviders"
+    effect    = "Allow"
+    actions   = ["iam:ListOpenIDConnectProviders"]
+    resources = ["*"]
+  }
   statement {
     sid       = "ReadGithubOidcProvider"
     effect    = "Allow"
