@@ -231,6 +231,23 @@ Format:
 - Forward-compatibility: `SESSION_BUCKET` keeps sessions optional forever; `S3SnapshotStorage` implements the SDK's stable interface so a future AgentCore Memory adapter swaps in behind `createAgent` unchanged; bucket layout matches SDK convention (FileStorage ↔ S3 interchangeable); `immutable_history` + manifest implemented for future checkpoint/restore.
 - Known follow-ups: apply now needs `-var="image_tag=iter9"` (was iter6); default conversation manager (SlidingWindow/40) may need tuning for long sessions; bucket CMK/access-logging deferred to iter 12; carried dead `gateway_invoke` policy.
 
+## [Iter 11] — 2026-06-07 — CI/CD pipeline
+
+> Iter 10 (observability) deferred to the end; this iteration is CI/CD.
+
+- Added: `.github/workflows/ci.yml` (PR checks — `tsc --noEmit`, `terraform fmt -check`, `terraform validate` with `-backend=false`); `.github/workflows/deploy.yml` (push-to-main + manual — OIDC assume → buildx ARM64 push → `terraform apply -var=image_tag=<sha>` → smoke test); `.github/workflows/bootstrap.yml` (one-time, manual — creates the deploy role under temporary keys, prints the role ARN for a one-time paste into the `AWS_ROLE_ARN` Actions var); `infra/cicd.tf` (GitHub deploy role + scoped policies; OIDC provider referenced via `data` source).
+- Changed: `infra/variables.tf` (`github_repo` var, defaulted to the git remote `thayagapriyan/agentcore-solution1`); `infra/outputs.tf` (`github_deploy_role_arn`).
+- **Design**: zero-standing-secrets via GitHub OIDC. The one unavoidable bootstrap (AWS won't trust GitHub's issuer until a provider exists) is an in-CI manual-dispatch workflow using temporary admin keys that are deleted right after — no local terraform, no long-lived keys. Trust scoped to `repo:thayagapriyan/agentcore-solution1:*`. Deploy role = PowerUserAccess + name-scoped IAM (`agentcore-solution1-*`) + tfstate-bucket access; OIDC provider read-only (`List` on `*`, `Get` scoped).
+- **Fixes surfaced by live runs**: TF version 1.6.6 → 1.15.4 (backend `use_lockfile` needs ≥ 1.10); OIDC provider already existed account-wide (409) → switched to `data` source; GITHUB_TOKEN can't write Actions vars (403) → bootstrap prints ARN for manual paste; deploy role needed `iam:ListOpenIDConnectProviders` (data source resolves by URL) → added List-on-`*`.
+- Tests:
+  - Local: `tsc --noEmit` clean; `terraform fmt -check -recursive` clean; `terraform validate` (incl. `cicd.tf`) → "Success! The configuration is valid."
+  - Bootstrap workflow → deploy role created, ARN published, `AWS_ROLE_ARN` var set, bootstrap secrets deleted.
+  - **Deploy workflow (OIDC, keyless)** → build/push ARM64 → `terraform apply` → **smoke test PASSED**: `invoke-agent-runtime` returned `statusCode 200` with a valid `result`; agent answered coherently and listed its real tools (add-tool, hello-tool).
+- Prompt log: [docs/prompts/iter-11.md](docs/prompts/iter-11.md)
+- Rollback: disable both workflows in GitHub Settings (no AWS change); or `terraform -chdir=infra destroy -target=aws_iam_role.github_deploy` (do NOT destroy the shared OIDC provider); or delete `.github/workflows/*.yml`.
+- Forward-compatibility: workflows read region/repo/role-ARN from Actions `vars`, so a staging environment later only needs a second var set; build/push and `terraform apply` are separate steps so each fails independently; `cicd.tf` is additive — removing it disables CI/CD without touching the runtime.
+- Known follow-ups: `ci.yml` validated locally but not yet exercised via a live PR (work landed via direct pushes to main); staging env + `workflow_dispatch` input for staged rollouts (iter 12). Note: the iter-11 work was committed directly on `main` across 5 commits (Deploy only triggers on main), rather than the usual feature branch.
+
 ---
 
 > **Convention**: append new entries at the **bottom** of the iteration list. Never edit a past entry — add a follow-up entry instead. Past commits stay immutable; the changelog reflects that.

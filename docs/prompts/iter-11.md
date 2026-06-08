@@ -94,10 +94,22 @@ Per the iteration plan's Test phase. Record actual results, not expected.
 - [x] `terraform fmt -check -recursive` (in infra/) → exit 0 (no reformatting needed)
 - [x] `terraform init -backend=false && terraform validate` → "Success! The
       configuration is valid." (full config including cicd.tf)
-- [ ] Open a dummy PR → CI runs and passes → pending push to GitHub
-- [ ] Run "Bootstrap OIDC" workflow once → provider+role created, AWS_ROLE_ARN var
-      set → pending push + manual run
-- [ ] Merge to main → deploy runs, smoke test passes → pending bootstrap
+- [x] Run "Bootstrap OIDC" workflow → deploy role created; role ARN printed and set
+      as the AWS_ROLE_ARN Actions variable; bootstrap secrets deleted.
+- [x] Deploy workflow (OIDC, no keys) → build/push ARM64 → `terraform apply` → smoke
+      test PASSED. invoke-agent-runtime returned statusCode 200 with a valid `result`
+      field; agent answered coherently and listed its real tools (add-tool,
+      hello-tool). Sample:
+      `{"result":"I don't have a \"ping\" tool ... add-tool ... hello-tool ...","sessionId":"b8fd7cc5-..."}`
+
+Fixes required along the way (each surfaced by a failed run, then corrected):
+- Terraform version: workflows pinned 1.6.6 but the S3 backend uses `use_lockfile`
+  (needs >= 1.10) → bumped all three workflows to 1.15.4.
+- OIDC provider already existed account-wide (409) → switched to a `data` source.
+- GITHUB_TOKEN can't write Actions variables (403) → bootstrap now prints the ARN
+  with copy-paste instructions instead of auto-setting it.
+- Deploy role lacked `iam:ListOpenIDConnectProviders` (the data source resolves by
+  URL via List) → added a List-on-`*` statement alongside the scoped Get.
 
 ---
 
@@ -114,6 +126,9 @@ Per the iteration plan's Test phase. Record actual results, not expected.
 
 ## Open questions / follow-ups
 
+- [ ] Exercise `ci.yml` via a real PR — it's validated locally (tsc/fmt/validate all
+      pass) but the deploy path landed via direct pushes to main, so the PR-triggered
+      CI workflow hasn't run on GitHub yet.
 - [ ] Staging environment + `workflow_dispatch` input for staged rollouts (iter 12).
 - [ ] Bedrock model-access must be granted in the deploy account for the smoke test
       to return a real answer (pre-existing requirement, not new here).
@@ -123,6 +138,7 @@ Per the iteration plan's Test phase. Record actual results, not expected.
 ## Rollback
 
 - Disable both workflows in GitHub → Settings → Actions (no AWS change).
-- `terraform -chdir=infra destroy -target=aws_iam_role.github_deploy -target=aws_iam_openid_connect_provider.github`
-  removes the OIDC role/provider.
+- `terraform -chdir=infra destroy -target=aws_iam_role.github_deploy` removes the
+  deploy role. Do NOT destroy the OIDC provider — it's a shared, account-wide
+  singleton consumed via a data source (other repos may depend on it).
 - Delete `.github/workflows/*.yml` to remove the pipeline entirely.
